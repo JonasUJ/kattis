@@ -1,0 +1,55 @@
+{
+    "$schema": "https://puremourning.github.io/vimspector/schema/vimspector.schema.json",
+    "configurations": {
+        "rust - launch": {
+            "adapter": "vscode-cpptools",
+            "configuration": {
+                "name": "LLDB: Launch",
+                "type": "cppdbg",
+                "request": "launch",
+                "cwd": "${workspaceRoot}",
+                "args": [],
+                "program": "${workspaceRoot}/target/debug/satisfaction",
+                "stopAtEntry": true,
+                "externalConsole": true
+            },
+            "variables": [
+                {
+                    "build": {
+                        "shell": "cargo build"
+                    }
+                }
+            ]
+        },
+        "rust - test": {
+            "adapter": "vscode-cpptools",
+            "configuration": {
+                "name": "LLDB: Launch",
+                "type": "cppdbg",
+                "request": "launch",
+                "cwd": "${workspaceRoot}",
+                "args": ["--include-ignored", "--test-threads", "1"],
+                "program": "${bin}",
+                "stopAtEntry": true,
+                "externalConsole": true
+            },
+            "variables": [
+                {
+                    "json_data": {
+                        "shell": "sh -c 'cargo test --workspace --no-run --quiet --message-format=json > .vimspector.tmp'"
+                    }
+                },
+                {
+                    "bin": {
+                        "shell": "jq -sr '.[] | select(.target.kind[]? == \"lib\") | select(.executable != null) | .executable' .vimspector.tmp"
+                    }
+                },
+                {
+                    "clean": {
+                        "shell": "rm .vimspector.tmp"
+                    }
+                }
+            ]
+        }
+    }
+}

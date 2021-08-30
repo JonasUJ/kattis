@@ -1,0 +1,15 @@
+if A then
+ checkpoint
+ if ~A then
+ checkpoint
+ fi
+else
+ checkpoint
+fi
+if (A&B)|(~A&~B) then
+ checkpoint
+fi
+if A|~A then checkpoint fi
+if B then
+ if ~A then checkpoint fi
+fi
