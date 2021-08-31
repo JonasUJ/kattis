@@ -6,13 +6,6 @@ use std::{
 };
 
 #[derive(PartialEq, Debug)]
-enum Operator {
-    And,
-    Or,
-    Not,
-}
-
-#[derive(PartialEq, Debug)]
 enum Token {
     If,
     Then,
@@ -21,12 +14,15 @@ enum Token {
     Checkpoint,
     LParen,
     RParen,
-    Op(Operator),
+    And,
+    Or,
+    Not,
     Var(char),
 }
 
 trait Expr {
     fn process(&self) -> Option<HashSet<char>>;
+    fn _debug(&self, i: &usize);
 }
 
 struct And {
@@ -54,6 +50,11 @@ impl Expr for And {
 
         and(&left, &right)
     }
+    fn _debug(&self, i: &usize) {
+        self.lhs._debug(&(i + 2));
+        println!("{:i$}and", " ", i = i);
+        self.rhs._debug(&(i + 2));
+    }
 }
 
 impl Expr for Or {
@@ -73,17 +74,29 @@ impl Expr for Or {
 
         Some(left.union(&right).cloned().collect())
     }
+    fn _debug(&self, i: &usize) {
+        self.lhs._debug(&(i + 2));
+        println!("{:i$}or", " ", i = i);
+        self.rhs._debug(&(i + 2));
+    }
 }
 
 impl Expr for Not {
     fn process(&self) -> Option<HashSet<char>> {
         Some(self.expr.process()?.iter().map(invert_case).collect())
     }
+    fn _debug(&self, i: &usize) {
+        println!("{:i$}not", " ", i = i);
+        self.expr._debug(&(i + 2));
+    }
 }
 
 impl Expr for Var {
     fn process(&self) -> Option<HashSet<char>> {
         Some([self.name].iter().cloned().collect())
+    }
+    fn _debug(&self, i: &usize) {
+        println!("{:i$}{}", " ", self.name, i = i);
     }
 }
 
@@ -135,8 +148,9 @@ impl Node for IfStmt {
         v
     }
     fn _debug(&self, i: &usize) {
-        println!("{:i$}if", " ", i=i);
+        println!("{:i$}if", " ", i = i);
         let i = i + 2;
+        self.expr._debug(&i);
         for node in self.true_nodes.iter() {
             node._debug(&i);
         }
@@ -153,7 +167,7 @@ impl Node for CheckpointStmt {
         v
     }
     fn _debug(&self, i: &usize) {
-        println!("{:i$}checkpoint", " ", i=i);
+        println!("{:i$}checkpoint", " ", i = i);
     }
 }
 
@@ -261,9 +275,9 @@ fn parse_token(s: &String) -> Token {
         "checkpoint" => Token::Checkpoint,
         "(" => Token::LParen,
         ")" => Token::RParen,
-        "&" => Token::Op(Operator::And),
-        "|" => Token::Op(Operator::Or),
-        "~" => Token::Op(Operator::Not),
+        "&" => Token::And,
+        "|" => Token::Or,
+        "~" => Token::Not,
 
         // Vars are guarenteed to be 1 char.
         _ => Token::Var(
@@ -293,7 +307,7 @@ fn parse(tokens: Vec<Token>) -> AST {
 
 fn parse_if(iter: &mut Peekable<Iter<'_, Token>>) -> Box<dyn Node> {
     // parse_if is only called if the Token::If has already been consumed.
-    let expr = parse_expr(iter);
+    let expr = parse_expr(iter, 0);
 
     // Expect Then after expression.
     assert_eq!(iter.next(), Option::Some(&Token::Then));
@@ -322,47 +336,35 @@ fn parse_if(iter: &mut Peekable<Iter<'_, Token>>) -> Box<dyn Node> {
     })
 }
 
-fn parse_expr(iter: &mut Peekable<Iter<'_, Token>>) -> Box<dyn Expr> {
+fn parse_expr(iter: &mut Peekable<Iter<'_, Token>>, precedence: usize) -> Box<dyn Expr> {
     let mut expr: Option<Box<dyn Expr>> = None;
 
     while let Some(tok) = iter.next() {
+        println!("Parsing {:?}", tok);
         expr = Some(match tok {
-            &Token::LParen => parse_expr(iter),
-            &Token::RParen => return expr.expect("Unexpected ')' while parsing expression."),
+            &Token::LParen => parse_expr(iter, 0),
             &Token::Var(name) => Box::new(Var { name }),
-            &Token::Op(Operator::Not) => Box::new(Not {
-                expr: parse_expr(iter),
+            &Token::Not => Box::new(Not {
+                expr: parse_expr(iter, 2),
             }),
-            &Token::Op(Operator::And) => Box::new(And {
+            &Token::And => Box::new(And {
                 lhs: expr.expect("Unexpected '&' while parsing expression."),
-                rhs: parse_expr(iter),
+                rhs: parse_expr(iter, 1),
             }),
-            &Token::Op(Operator::Or) => {
-                let tmp = parse_expr(iter);
-
-                // Simple operator precedence parser because we only have two kinds of binary
-                // operators to deal with.
-                if let Some(&Token::Op(Operator::And)) = iter.peek() {
-                    Box::new(Or {
-                        lhs: expr.expect("Unexpected '|' while parsing expression."),
-                        rhs: Box::new(And {
-                            lhs: tmp,
-                            rhs: parse_expr(iter),
-                        }),
-                    })
-                } else {
-                    Box::new(Or {
-                        lhs: expr.expect("Unexpected '|' while parsing expression."),
-                        rhs: tmp,
-                    })
-                }
-            }
+            &Token::Or => Box::new(Or {
+                lhs: expr.expect("Unexpected '|' while parsing expression."),
+                rhs: parse_expr(iter, 0),
+            }),
 
             _ => panic!("Unexpected '{:?}' while parsing expression.", tok),
         });
 
-        if let Some(&Token::Then) = iter.peek() {
-            return expr.expect("Unexpected end of expression while parsing expression.");
+        match iter.peek() {
+            Some(&Token::Or) if precedence > 0 => return expr.expect("Unexpected '&' while parsing expression."),
+            Some(&Token::And) if precedence > 1 => return expr.expect("Unexpected '&' while parsing expression."),
+            Some(&Token::RParen) => return expr.expect("Unexpected ')' while parsing expression."),
+            Some(&Token::Then) => return expr.expect("Unexpected end of expression while parsing expression."),
+            _ => (),
         }
     }
 
