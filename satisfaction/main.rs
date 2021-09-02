@@ -12,11 +12,11 @@ enum Token {
     Else,
     Fi,
     Checkpoint,
-    LParen,
-    RParen,
     And,
     Or,
     Not,
+    LParen(usize),
+    RParen(usize),
     Var(char),
 }
 
@@ -199,15 +199,15 @@ impl AST {
 }
 
 fn main() {
-    // let source = io::stdin()
-    //     .lock()
-    //     .lines()
-    //     .map(Result::unwrap)
-    //     .collect::<Vec<String>>()
-    //     .join(" ");
-    let source = String::from("if (A&B | ~A&~B) & (~A&B) then checkpoint fi");
+    let source = io::stdin()
+        .lock()
+        .lines()
+        .map(Result::unwrap)
+        .collect::<Vec<String>>()
+        .join(" ");
+    // let source = String::from("if A|B|(C|D)|F then checkpoint fi");
     let tokens = lex(&source);
-    println!("{:?}", tokens);
+    // println!("{:?}", tokens);
     let ast = parse(tokens);
     let result = ast.check();
     for s in result {
@@ -248,36 +248,45 @@ fn lex(source: &String) -> Vec<Token> {
     // Checkpoint is the longest token.
     let mut cur = String::with_capacity("checkpoint".len());
 
+    // Paren nesting depth
+    let mut depth: usize = 0;
+
     for c in source.chars() {
         if c == ' ' {
             if cur.len() > 0 {
-                tokens.push(parse_token(&cur));
+                tokens.push(parse_token(&cur, &mut depth));
                 cur.clear();
             }
         } else if c.is_uppercase() || !c.is_ascii_alphabetic() {
-            tokens.push(parse_token(&c.to_string()));
+            tokens.push(parse_token(&c.to_string(), &mut depth));
         } else {
             cur.push(c);
         }
     }
 
-    tokens.push(parse_token(&cur));
+    tokens.push(parse_token(&cur, &mut depth));
 
     tokens
 }
 
-fn parse_token(s: &String) -> Token {
+fn parse_token(s: &String, depth: &mut usize) -> Token {
     match s.as_str() {
         "if" => Token::If,
         "then" => Token::Then,
         "else" => Token::Else,
         "fi" => Token::Fi,
         "checkpoint" => Token::Checkpoint,
-        "(" => Token::LParen,
-        ")" => Token::RParen,
         "&" => Token::And,
         "|" => Token::Or,
         "~" => Token::Not,
+        "(" => Token::LParen({
+            *depth += 1;
+            *depth
+        }),
+        ")" => Token::RParen({
+            *depth -= 1;
+            *depth + 1
+        }),
 
         // Vars are guarenteed to be 1 char.
         _ => Token::Var(
@@ -307,7 +316,7 @@ fn parse(tokens: Vec<Token>) -> AST {
 
 fn parse_if(iter: &mut Peekable<Iter<'_, Token>>) -> Box<dyn Node> {
     // parse_if is only called if the Token::If has already been consumed.
-    let expr = parse_expr(iter, 0);
+    let expr = parse_expr(iter, 0, 0);
 
     // Expect Then after expression.
     assert_eq!(iter.next(), Option::Some(&Token::Then));
@@ -336,34 +345,50 @@ fn parse_if(iter: &mut Peekable<Iter<'_, Token>>) -> Box<dyn Node> {
     })
 }
 
-fn parse_expr(iter: &mut Peekable<Iter<'_, Token>>, precedence: usize) -> Box<dyn Expr> {
+fn parse_expr(
+    iter: &mut Peekable<Iter<'_, Token>>,
+    precedence: usize,
+    cur_depth: usize,
+) -> Box<dyn Expr> {
     let mut expr: Option<Box<dyn Expr>> = None;
 
     while let Some(tok) = iter.next() {
         println!("Parsing {:?}", tok);
         expr = Some(match tok {
-            &Token::LParen => parse_expr(iter, 0),
+            &Token::LParen(depth) => {
+                let tmp = parse_expr(iter, 0, depth);
+                println!("Parsing {:?}", iter.next());
+                tmp
+            }
             &Token::Var(name) => Box::new(Var { name }),
             &Token::Not => Box::new(Not {
-                expr: parse_expr(iter, 2),
+                expr: parse_expr(iter, 2, cur_depth),
             }),
             &Token::And => Box::new(And {
                 lhs: expr.expect("Unexpected '&' while parsing expression."),
-                rhs: parse_expr(iter, 1),
+                rhs: parse_expr(iter, 1, cur_depth),
             }),
             &Token::Or => Box::new(Or {
                 lhs: expr.expect("Unexpected '|' while parsing expression."),
-                rhs: parse_expr(iter, 0),
+                rhs: parse_expr(iter, 0, cur_depth),
             }),
 
             _ => panic!("Unexpected '{:?}' while parsing expression.", tok),
         });
 
         match iter.peek() {
-            Some(&Token::Or) if precedence > 0 => return expr.expect("Unexpected '&' while parsing expression."),
-            Some(&Token::And) if precedence > 1 => return expr.expect("Unexpected '&' while parsing expression."),
-            Some(&Token::RParen) => return expr.expect("Unexpected ')' while parsing expression."),
-            Some(&Token::Then) => return expr.expect("Unexpected end of expression while parsing expression."),
+            Some(&Token::Or) if precedence > 0 => {
+                return expr.expect("Unexpected '&' while parsing expression.")
+            }
+            Some(&Token::And) if precedence > 1 => {
+                return expr.expect("Unexpected '&' while parsing expression.")
+            }
+            Some(&Token::RParen(depth)) if depth <= &cur_depth => {
+                return expr.expect("Unexpected ')' while parsing expression.")
+            }
+            Some(&Token::Then) => {
+                return expr.expect("Unexpected end of expression while parsing expression.")
+            }
             _ => (),
         }
     }
