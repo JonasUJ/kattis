@@ -205,7 +205,7 @@ fn main() {
         .map(Result::unwrap)
         .collect::<Vec<String>>()
         .join(" ");
-    // let source = String::from("if A|B|(C|D)|F then checkpoint fi");
+    // let source = String::from("if (((((A)))&B)) then checkpoint fi");
     let tokens = lex(&source);
     // println!("{:?}", tokens);
     let ast = parse(tokens);
@@ -213,9 +213,9 @@ fn main() {
     for s in result {
         println!(">{}", s);
     }
-    for node in ast.nodes {
-        node._debug(&0);
-    }
+    // for node in ast.nodes {
+    //     node._debug(&0);
+    // }
 }
 
 fn invert_case(c: &char) -> char {
@@ -229,10 +229,12 @@ fn invert_case(c: &char) -> char {
 fn clean(set: &HashSet<char>) -> HashSet<char> {
     let mut new = set.clone();
     new.retain(|c| !set.contains(&invert_case(c)));
+    println!("cleaned {:?} to {:?}", set, new);
     new
 }
 
 fn and(a: &HashSet<char>, b: &HashSet<char>) -> Option<HashSet<char>> {
+    println!("anding {:?} and {:?}", a, b);
     // If a var is present as true on one side and as false on the other,
     // then the And is unsolveable.
     if a.is_disjoint(&b.iter().map(invert_case).collect()) {
@@ -252,7 +254,7 @@ fn lex(source: &String) -> Vec<Token> {
     let mut depth: usize = 0;
 
     for c in source.chars() {
-        if c == ' ' {
+        if c == ' ' || c == '\n' || c == '\t' {
             if cur.len() > 0 {
                 tokens.push(parse_token(&cur, &mut depth));
                 cur.clear();
@@ -264,7 +266,9 @@ fn lex(source: &String) -> Vec<Token> {
         }
     }
 
-    tokens.push(parse_token(&cur, &mut depth));
+    if cur.len() > 0 {
+        tokens.push(parse_token(&cur, &mut depth));
+    }
 
     tokens
 }
@@ -353,11 +357,10 @@ fn parse_expr(
     let mut expr: Option<Box<dyn Expr>> = None;
 
     while let Some(tok) = iter.next() {
-        println!("Parsing {:?}", tok);
         expr = Some(match tok {
             &Token::LParen(depth) => {
                 let tmp = parse_expr(iter, 0, depth);
-                println!("Parsing {:?}", iter.next());
+                assert_eq!(iter.next(), Option::Some(&Token::RParen(depth)));
                 tmp
             }
             &Token::Var(name) => Box::new(Var { name }),
