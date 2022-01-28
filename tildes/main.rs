@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::io::{self, BufRead};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -17,8 +18,9 @@ impl UnionFind {
         }
     }
 
-    fn find(&self, mut site: Site) -> Site {
+    fn find(&mut self, mut site: Site) -> Site {
         while site != self.id[site.0] {
+            self.id[site.0] = self.id[self.id[site.0].0];
             site = self.id[site.0];
         }
 
@@ -42,7 +44,7 @@ impl UnionFind {
         }
     }
 
-    fn size(&self, site: Site) -> usize {
+    fn size(&mut self, site: Site) -> usize {
         let set = self.find(site);
         self.sz[set.0]
     }
@@ -53,7 +55,7 @@ fn main() {
     let mut line = String::new();
     stdin.read_line(&mut line);
     let mut uf = UnionFind::new(line.split(' ').next().unwrap().parse().unwrap());
-    let mut output = Vec::<String>::new();
+    let mut output = String::with_capacity(line.split(' ').next().unwrap().parse::<usize>().unwrap() * 5);
 
     for line in stdin.lock().lines().map(Result::unwrap) {
         let mut iter = line.split_whitespace();
@@ -62,13 +64,16 @@ fn main() {
                 Site(iter.next().unwrap().parse::<usize>().unwrap() - 1),
                 Site(iter.next().unwrap().parse::<usize>().unwrap() - 1),
             ),
-            Some("s") => output.push(
-                uf.size(Site(iter.next().unwrap().parse::<usize>().unwrap() - 1))
-                    .to_string(),
-            ),
+            Some("s") => {
+                writeln!(
+                    &mut output,
+                    "{}",
+                    uf.size(Site(iter.next().unwrap().parse::<usize>().unwrap() - 1)),
+                );
+            }
             _ => panic!("invalid command"),
         }
     }
 
-    print!("{}", output.join("\n"));
+    print!("{}", output);
 }
