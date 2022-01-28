@@ -2,51 +2,53 @@ use std::fmt::Write;
 use std::io::{self, BufRead};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-struct Site(usize);
+struct Site(u32);
 
 #[derive(Debug)]
 struct UnionFind {
     id: Vec<Site>,
-    sz: Vec<usize>,
+    sz: Vec<u32>,
 }
 
 impl UnionFind {
-    fn new(count: usize) -> Self {
+    fn new(count: u32) -> Self {
         UnionFind {
             id: (0..count).map(Site).collect(),
-            sz: vec![1; count],
+            sz: vec![1; count as usize],
         }
     }
 
-    fn find(&mut self, mut site: Site) -> Site {
-        while site != self.id[site.0] {
-            self.id[site.0] = self.id[self.id[site.0].0];
-            site = self.id[site.0];
+    unsafe fn find_unchecked(&mut self, mut site: Site) -> Site {
+        while site != *self.id.get_unchecked(site.0 as usize) {
+            *self.id.get_unchecked_mut(site.0 as usize) = *self
+                .id
+                .get_unchecked(self.id.get_unchecked(site.0 as usize).0 as usize);
+            site = *self.id.get_unchecked(site.0 as usize);
         }
 
         site
     }
 
-    fn union(&mut self, a: Site, b: Site) {
-        let a = self.find(a);
-        let b = self.find(b);
+    unsafe fn union_unchecked(&mut self, a: Site, b: Site) {
+        let a = self.find_unchecked(a);
+        let b = self.find_unchecked(b);
 
         if a == b {
             return;
         }
 
-        if self.sz[a.0] < self.sz[b.0] {
-            self.id[a.0] = b;
-            self.sz[b.0] += self.sz[a.0];
+        if *self.sz.get_unchecked(a.0 as usize) < *self.sz.get_unchecked(b.0 as usize) {
+            *self.id.get_unchecked_mut(a.0 as usize) = b;
+            *self.sz.get_unchecked_mut(b.0 as usize) += *self.sz.get_unchecked(a.0 as usize);
         } else {
-            self.id[b.0] = a;
-            self.sz[a.0] += self.sz[b.0];
+            *self.id.get_unchecked_mut(b.0 as usize) = a;
+            *self.sz.get_unchecked_mut(a.0 as usize) += *self.sz.get_unchecked(b.0 as usize);
         }
     }
 
-    fn size(&mut self, site: Site) -> usize {
-        let set = self.find(site);
-        self.sz[set.0]
+    unsafe fn size(&mut self, site: Site) -> u32 {
+        let site = self.find_unchecked(site).0 as usize;
+        *self.sz.get_unchecked(site)
     }
 }
 
@@ -55,23 +57,28 @@ fn main() {
     let mut line = String::new();
     stdin.read_line(&mut line);
     let mut uf = UnionFind::new(line.split(' ').next().unwrap().parse().unwrap());
-    let mut output = String::with_capacity(line.split(' ').next().unwrap().parse::<usize>().unwrap() * 5);
+    let mut output =
+        String::with_capacity(line.split(' ').next().unwrap().parse::<usize>().unwrap() * 5);
 
     for line in stdin.lock().lines().map(Result::unwrap) {
         let mut iter = line.split_whitespace();
-        match iter.next() {
-            Some("t") => uf.union(
-                Site(iter.next().unwrap().parse::<usize>().unwrap() - 1),
-                Site(iter.next().unwrap().parse::<usize>().unwrap() - 1),
-            ),
-            Some("s") => {
-                writeln!(
-                    &mut output,
-                    "{}",
-                    uf.size(Site(iter.next().unwrap().parse::<usize>().unwrap() - 1)),
-                );
+
+        // SAFETY: None
+        unsafe {
+            match iter.next() {
+                Some("t") => uf.union_unchecked(
+                    Site(iter.next().unwrap().parse::<u32>().unwrap() - 1),
+                    Site(iter.next().unwrap().parse::<u32>().unwrap() - 1),
+                ),
+                Some("s") => {
+                    writeln!(
+                        &mut output,
+                        "{}",
+                        uf.size(Site(iter.next().unwrap().parse::<u32>().unwrap() - 1)),
+                    );
+                }
+                _ => panic!("invalid command"),
             }
-            _ => panic!("invalid command"),
         }
     }
 
