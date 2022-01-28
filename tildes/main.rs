@@ -12,8 +12,10 @@ struct UnionFind {
 
 impl UnionFind {
     fn new(count: u32) -> Self {
+        let mut v = Vec::with_capacity(count as usize);
+        v.extend((0..count).map(Site));
         UnionFind {
-            id: (0..count).map(Site).collect(),
+            id: v,
             sz: vec![1; count as usize],
         }
     }
