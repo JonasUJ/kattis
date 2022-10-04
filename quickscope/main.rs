@@ -68,11 +68,7 @@ enum Output {
 
 impl Output {
     fn is_empty(&self) -> bool {
-        if let &Output::Empty = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, &Output::Empty)
     }
 }
 
@@ -127,10 +123,12 @@ impl Quickscope {
     }
 
     fn leave(&mut self) -> Output {
-        self.scopes
+        let scope = *self
+            .scopes
             .iter()
             .next_back()
             .expect("scope ended unexpectedly");
+        self.scopes.remove(&scope);
         Output::Empty
     }
 
@@ -149,26 +147,24 @@ impl Quickscope {
             }
         }
 
+        let scope = *self
+            .scopes
+            .iter()
+            .next_back()
+            .expect("unexpected end of scope");
+
         entry
             .and_modify(|decl| {
                 *decl = Rc::new(Decl {
                     declared_type: declared_type.clone(),
-                    scope: *self
-                        .scopes
-                        .iter()
-                        .next_back()
-                        .expect("unexpected end of scope"),
+                    scope,
                     shadow: Some(decl.clone()),
                 });
             })
             .or_insert_with(|| {
                 Rc::new(Decl {
                     declared_type,
-                    scope: *self
-                        .scopes
-                        .iter()
-                        .next_back()
-                        .expect("unexpected end of scope"),
+                    scope,
                     shadow: None,
                 })
             });
@@ -178,8 +174,9 @@ impl Quickscope {
 
     fn get_typeof(&mut self, ident: Ident) -> Output {
         let mut output = Output::UnDecl;
+        let scopes = &self.scopes;
         self.decls.entry(ident).and_modify(|decl| {
-            if let Some(inner) = decl.in_scope(&self.scopes) {
+            if let Some(inner) = decl.in_scope(scopes) {
                 *decl = inner.clone();
                 output = Output::Type(Type(decl.declared_type.0.clone()));
             }
